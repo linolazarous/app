@@ -3,7 +3,6 @@ import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { Label } from "../components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -14,6 +13,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import api from "../lib/api";
 import { toast } from "sonner";
+import Logo from "../components/Logo";
 import {
   Plus,
   FolderOpen,
@@ -33,8 +33,13 @@ import {
   ExternalLink,
   User,
   Shield,
+  Github,
+  AlertCircle,
+  Mail,
+  Star,
+  GitFork,
+  Import,
 } from "lucide-react";
-import Logo from "../components/Logo";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,17 +47,27 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "../components/ui/dropdown-menu";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "../components/ui/tabs";
 
 export default function DashboardPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
   const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectDescription, setNewProjectDescription] = useState("");
   const [creating, setCreating] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [githubRepos, setGithubRepos] = useState([]);
+  const [loadingRepos, setLoadingRepos] = useState(false);
+  const [importing, setImporting] = useState(null);
 
   useEffect(() => {
     fetchProjects();
@@ -102,6 +117,57 @@ export default function DashboardPage() {
       toast.success("Project deleted");
     } catch (error) {
       toast.error("Failed to delete project");
+    }
+  };
+
+  const handleConnectGitHub = async () => {
+    try {
+      const response = await api.get("/auth/github");
+      window.location.href = response.data.url;
+    } catch (error) {
+      toast.error("Failed to connect GitHub");
+    }
+  };
+
+  const handleFetchGitHubRepos = async () => {
+    if (!user?.github_username) {
+      toast.error("Please connect your GitHub account first");
+      return;
+    }
+
+    setLoadingRepos(true);
+    try {
+      const response = await api.get("/github/repos");
+      setGithubRepos(response.data);
+      setImportDialogOpen(true);
+    } catch (error) {
+      toast.error("Failed to fetch repositories");
+    } finally {
+      setLoadingRepos(false);
+    }
+  };
+
+  const handleImportRepo = async (repoFullName) => {
+    setImporting(repoFullName);
+    try {
+      const response = await api.post(`/github/import/${repoFullName}`);
+      setProjects([response.data, ...projects]);
+      setImportDialogOpen(false);
+      toast.success("Repository imported!");
+      navigate(`/project/${response.data.id}`);
+    } catch (error) {
+      toast.error("Failed to import repository");
+    } finally {
+      setImporting(null);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    try {
+      await api.post("/auth/resend-verification");
+      toast.success("Verification email sent!");
+    } catch (error) {
+      toast.error("Failed to send verification email");
     }
   };
 
@@ -159,6 +225,45 @@ export default function DashboardPage() {
           )}
         </nav>
 
+        {/* GitHub Connection */}
+        <div className="p-4 border-t border-white/5">
+          {user?.github_username ? (
+            <div className="p-3 rounded-lg bg-void-subtle border border-white/5">
+              <div className="flex items-center gap-2 text-sm">
+                <Github className="w-4 h-4 text-white" />
+                <span className="text-white font-medium truncate">
+                  {user.github_username}
+                </span>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleFetchGitHubRepos}
+                disabled={loadingRepos}
+                className="w-full mt-2 text-zinc-400 hover:text-white"
+                data-testid="import-from-github-btn"
+              >
+                {loadingRepos ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Import className="w-4 h-4 mr-2" />
+                )}
+                Import Repository
+              </Button>
+            </div>
+          ) : (
+            <Button
+              onClick={handleConnectGitHub}
+              variant="outline"
+              className="w-full border-white/10 text-white hover:bg-white/5"
+              data-testid="connect-github-btn"
+            >
+              <Github className="w-4 h-4 mr-2" />
+              Connect GitHub
+            </Button>
+          )}
+        </div>
+
         {/* Credits Card */}
         <div className="p-4 border-t border-white/5">
           <div className="p-4 rounded-lg bg-void-subtle border border-white/5">
@@ -198,9 +303,17 @@ export default function DashboardPage() {
                 className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors"
                 data-testid="user-menu-trigger"
               >
-                <div className="w-8 h-8 rounded-full bg-electric/20 flex items-center justify-center">
-                  <User className="w-4 h-4 text-electric" />
-                </div>
+                {user?.avatar_url ? (
+                  <img
+                    src={user.avatar_url}
+                    alt={user.name}
+                    className="w-8 h-8 rounded-full"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-electric/20 flex items-center justify-center">
+                    <User className="w-4 h-4 text-electric" />
+                  </div>
+                )}
                 <div className="flex-1 text-left">
                   <p className="text-sm font-medium text-white truncate">
                     {user?.name}
@@ -241,6 +354,30 @@ export default function DashboardPage() {
 
       {/* Main Content */}
       <main className="flex-1 ml-64">
+        {/* Email Verification Banner */}
+        {user && !user.email_verified && (
+          <div className="bg-yellow-500/10 border-b border-yellow-500/20 px-8 py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <AlertCircle className="w-5 h-5 text-yellow-500" />
+                <span className="text-yellow-400">
+                  Please verify your email address to access all features.
+                </span>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleResendVerification}
+                className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10"
+                data-testid="resend-verification-btn"
+              >
+                <Mail className="w-4 h-4 mr-2" />
+                Resend Email
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Header */}
         <header className="sticky top-0 z-30 bg-void/80 backdrop-blur-xl border-b border-white/5">
           <div className="flex items-center justify-between px-8 py-4">
@@ -284,9 +421,9 @@ export default function DashboardPage() {
                   </DialogHeader>
                   <form onSubmit={handleCreateProject} className="space-y-4 mt-4">
                     <div className="space-y-2">
-                      <Label htmlFor="project-name" className="text-white">
+                      <label htmlFor="project-name" className="text-sm text-white">
                         Project Name
-                      </Label>
+                      </label>
                       <Input
                         id="project-name"
                         placeholder="My Awesome App"
@@ -297,9 +434,9 @@ export default function DashboardPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="project-description" className="text-white">
+                      <label htmlFor="project-description" className="text-sm text-white">
                         Description (optional)
-                      </Label>
+                      </label>
                       <Input
                         id="project-description"
                         placeholder="A brief description of your project"
@@ -334,6 +471,73 @@ export default function DashboardPage() {
           </div>
         </header>
 
+        {/* Import GitHub Dialog */}
+        <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+          <DialogContent className="bg-void-paper border-white/10 max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="font-outfit text-xl text-white flex items-center gap-2">
+                <Github className="w-5 h-5" />
+                Import from GitHub
+              </DialogTitle>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto mt-4 space-y-2">
+              {githubRepos.length === 0 ? (
+                <p className="text-zinc-400 text-center py-8">No repositories found</p>
+              ) : (
+                githubRepos.map((repo) => (
+                  <div
+                    key={repo.id}
+                    className="p-4 rounded-lg bg-void-subtle border border-white/5 hover:border-electric/30 transition-colors"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-medium text-white truncate">{repo.name}</h4>
+                        <p className="text-sm text-zinc-400 truncate mt-1">
+                          {repo.description || "No description"}
+                        </p>
+                        <div className="flex items-center gap-4 mt-2 text-xs text-zinc-500">
+                          {repo.language && (
+                            <span className="px-2 py-0.5 rounded bg-white/5">
+                              {repo.language}
+                            </span>
+                          )}
+                          <div className="flex items-center gap-1">
+                            <Star className="w-3 h-3" />
+                            {repo.stargazers_count}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <GitFork className="w-3 h-3" />
+                            {repo.forks_count}
+                          </div>
+                          {repo.private && (
+                            <span className="text-yellow-500">Private</span>
+                          )}
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={() => handleImportRepo(repo.full_name)}
+                        disabled={importing === repo.full_name}
+                        className="ml-4 bg-electric hover:bg-electric/90 text-white"
+                        data-testid={`import-repo-${repo.name}`}
+                      >
+                        {importing === repo.full_name ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <>
+                            <Import className="w-4 h-4 mr-1" />
+                            Import
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {/* Content */}
         <div className="p-8">
           {loading ? (
@@ -363,16 +567,28 @@ export default function DashboardPage() {
                     No projects yet
                   </h3>
                   <p className="text-zinc-400 mb-6">
-                    Create your first project to start building with AI
+                    Create your first project or import from GitHub
                   </p>
-                  <Button
-                    onClick={() => setCreateDialogOpen(true)}
-                    className="bg-electric hover:bg-electric/90 text-white shadow-glow"
-                    data-testid="empty-new-project-btn"
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Create First Project
-                  </Button>
+                  <div className="flex items-center justify-center gap-4">
+                    <Button
+                      onClick={() => setCreateDialogOpen(true)}
+                      className="bg-electric hover:bg-electric/90 text-white shadow-glow"
+                      data-testid="empty-new-project-btn"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Create Project
+                    </Button>
+                    {user?.github_username && (
+                      <Button
+                        onClick={handleFetchGitHubRepos}
+                        variant="outline"
+                        className="border-white/10 text-white hover:bg-white/5"
+                      >
+                        <Github className="w-4 h-4 mr-2" />
+                        Import from GitHub
+                      </Button>
+                    )}
+                  </div>
                 </>
               )}
             </motion.div>
@@ -390,13 +606,16 @@ export default function DashboardPage() {
                     onClick={() => navigate(`/project/${project.id}`)}
                     data-testid={`project-card-${project.id}`}
                   >
-                    {/* Hover effect */}
                     <div className="absolute inset-0 rounded-xl bg-electric/5 opacity-0 group-hover:opacity-100 transition-opacity" />
 
                     <div className="relative z-10">
                       <div className="flex items-start justify-between mb-4">
                         <div className="w-10 h-10 rounded-lg bg-electric/10 flex items-center justify-center">
-                          <Code2 className="w-5 h-5 text-electric" />
+                          {project.github_repo ? (
+                            <Github className="w-5 h-5 text-white" />
+                          ) : (
+                            <Code2 className="w-5 h-5 text-electric" />
+                          )}
                         </div>
 
                         <DropdownMenu>
@@ -455,6 +674,11 @@ export default function DashboardPage() {
                           <div className="flex items-center gap-1 text-xs text-emerald">
                             <Cloud className="w-3 h-3" />
                             Deployed
+                          </div>
+                        ) : project.status === "imported" ? (
+                          <div className="flex items-center gap-1 text-xs text-purple-400">
+                            <Github className="w-3 h-3" />
+                            Imported
                           </div>
                         ) : (
                           <div className="flex items-center gap-1 text-xs text-zinc-500">
