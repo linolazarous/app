@@ -6,7 +6,8 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";
-import { Sparkles, ArrowLeft, Eye, EyeOff, Loader2 } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, Loader2 } from "lucide-react";
+import Logo from "../components/Logo";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -42,13 +43,8 @@ export default function LoginPage() {
       <div className="hidden lg:flex lg:w-1/2 relative bg-void-paper border-r border-white/5">
         <div className="absolute inset-0 bg-hero-glow" />
         <div className="relative z-10 flex flex-col justify-between p-12 w-full">
-          <Link to="/" className="flex items-center gap-2">
-            <div className="w-10 h-10 rounded-lg bg-electric flex items-center justify-center">
-              <Sparkles className="w-6 h-6 text-white" />
-            </div>
-            <span className="font-outfit font-bold text-2xl text-white">
-              CursorCode AI
-            </span>
+          <Link to="/">
+            <Logo size="large" />
           </Link>
 
           <div>
@@ -76,13 +72,8 @@ export default function LoginPage() {
           className="w-full max-w-md"
         >
           {/* Mobile Logo */}
-          <Link to="/" className="flex lg:hidden items-center gap-2 mb-8">
-            <div className="w-8 h-8 rounded-lg bg-electric flex items-center justify-center">
-              <Sparkles className="w-5 h-5 text-white" />
-            </div>
-            <span className="font-outfit font-bold text-xl text-white">
-              CursorCode AI
-            </span>
+          <Link to="/" className="flex lg:hidden mb-8">
+            <Logo size="default" />
           </Link>
 
           <Link
