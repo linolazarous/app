@@ -340,10 +340,11 @@ export default function LandingPage() {
                 <Button
                   size="lg"
                   variant="outline"
+                  onClick={() => setDemoModalOpen(true)}
                   className="border-white/10 text-white hover:bg-white/5 px-8 py-6 text-lg"
                   data-testid="hero-demo-btn"
                 >
-                  <Terminal className="mr-2 w-5 h-5" />
+                  <Play className="mr-2 w-5 h-5" />
                   Watch Demo
                 </Button>
               </motion.div>
