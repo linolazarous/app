@@ -8,7 +8,6 @@ import api from "../lib/api";
 import { toast } from "sonner";
 import Editor from "@monaco-editor/react";
 import {
-  Sparkles,
   ArrowLeft,
   Play,
   Cloud,
@@ -31,6 +30,7 @@ import {
   RefreshCw,
   ExternalLink,
 } from "lucide-react";
+import Logo from "../components/Logo";
 import {
   DropdownMenu,
   DropdownMenuContent,

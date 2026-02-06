@@ -18,7 +18,6 @@ import { useAuth } from "../context/AuthContext";
 import api from "../lib/api";
 import { toast } from "sonner";
 import {
-  Sparkles,
   Users,
   DollarSign,
   Activity,
@@ -33,6 +32,7 @@ import {
   PieChart,
   RefreshCw,
 } from "lucide-react";
+import Logo from "../components/Logo";
 import {
   BarChart,
   Bar,
@@ -104,13 +104,8 @@ export default function AdminPage() {
       {/* Sidebar */}
       <aside className="fixed left-0 top-0 h-screen w-64 bg-void-paper border-r border-white/5 flex flex-col z-40">
         <div className="p-6 border-b border-white/5">
-          <Link to="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-electric flex items-center justify-center">
-              <Sparkles className="w-5 h-5 text-white" />
-            </div>
-            <span className="font-outfit font-bold text-lg text-white">
-              CursorCode
-            </span>
+          <Link to="/">
+            <Logo size="default" />
           </Link>
         </div>
 
