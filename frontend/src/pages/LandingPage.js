@@ -17,8 +17,10 @@ import {
   Bot,
   Menu,
   X,
+  Play,
 } from "lucide-react";
 import Logo from "../components/Logo";
+import DemoVideoModal from "../components/DemoVideoModal";
 
 const PRICING_PLANS = [
   {
