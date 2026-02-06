@@ -26,8 +26,8 @@ import {
   ChevronDown,
   FileCode,
   FileJson,
-  FileCss,
-  FileType,
+  FileText,
+  File,
   RefreshCw,
   ExternalLink,
 } from "lucide-react";
@@ -56,9 +56,9 @@ const FILE_ICONS = {
   ts: FileCode,
   tsx: FileCode,
   json: FileJson,
-  css: FileCss,
-  html: FileType,
-  md: FileType,
+  css: FileText,
+  html: File,
+  md: FileText,
   py: FileCode,
   default: FileCode,
 };
