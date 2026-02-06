@@ -1,6 +1,7 @@
 import requests
 import sys
 import json
+import uuid
 from datetime import datetime
 
 class CursorCodeAPITester:
@@ -9,9 +10,13 @@ class CursorCodeAPITester:
         self.token = None
         self.user_id = None
         self.project_id = None
+        self.deployment_id = None
         self.tests_run = 0
         self.tests_passed = 0
         self.test_results = []
+        self.test_user_email = f"test_{uuid.uuid4().hex[:8]}@example.com"
+        self.test_user_name = "Test User"
+        self.test_user_password = "TestPass123!"
 
     def log_test(self, name, success, details=""):
         """Log test result"""
