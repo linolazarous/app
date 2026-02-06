@@ -177,9 +177,8 @@ class CursorCodeAPITester:
         success, response = self.run_test(
             "Stripe Checkout (Demo Mode)",
             "POST",
-            "subscriptions/create-checkout",
-            200,
-            data={"plan": "standard"}
+            "subscriptions/create-checkout?plan=standard",
+            200
         )
         
         if success and 'url' in response:
