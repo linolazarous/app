@@ -1,5 +1,6 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, BackgroundTasks, Header
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, BackgroundTasks, Header, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import RedirectResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -9,6 +10,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
 from typing import List, Optional, Dict, Any
 import uuid
+import secrets
 from datetime import datetime, timezone, timedelta
 import bcrypt
 from jose import jwt, JWTError
@@ -16,6 +18,8 @@ import httpx
 import stripe
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
+from urllib.parse import urlencode
+import base64
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -47,6 +51,11 @@ STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
 SENDGRID_API_KEY = os.environ.get('SENDGRID_API_KEY', '')
 EMAIL_FROM = os.environ.get('EMAIL_FROM', 'info@cursorcode.ai')
 
+# GitHub OAuth Configuration
+GITHUB_CLIENT_ID = os.environ.get('GITHUB_OAUTH_CLIENT_ID', '')
+GITHUB_CLIENT_SECRET = os.environ.get('GITHUB_OAUTH_CLIENT_SECRET', '')
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+
 # Create the main app
 app = FastAPI(title="CursorCode AI API", version="1.0.0")
 
@@ -62,10 +71,6 @@ logger = logging.getLogger(__name__)
 
 # ==================== MODELS ====================
 
-class UserBase(BaseModel):
-    email: EmailStr
-    name: str
-
 class UserCreate(BaseModel):
     email: EmailStr
     name: str
@@ -80,13 +85,19 @@ class User(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     email: EmailStr
     name: str
-    password_hash: str
+    password_hash: str = ""
     plan: str = "starter"
     credits: int = 10
     credits_used: int = 0
     stripe_customer_id: Optional[str] = None
     stripe_subscription_id: Optional[str] = None
     is_admin: bool = False
+    email_verified: bool = False
+    verification_token: Optional[str] = None
+    github_id: Optional[int] = None
+    github_username: Optional[str] = None
+    github_access_token: Optional[str] = None
+    avatar_url: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class UserResponse(BaseModel):
@@ -97,6 +108,9 @@ class UserResponse(BaseModel):
     credits: int
     credits_used: int
     is_admin: bool
+    email_verified: bool
+    github_username: Optional[str]
+    avatar_url: Optional[str]
     created_at: str
 
 class TokenResponse(BaseModel):
@@ -121,6 +135,8 @@ class Project(BaseModel):
     files: Dict[str, str] = Field(default_factory=dict)
     tech_stack: List[str] = Field(default_factory=list)
     deployed_url: Optional[str] = None
+    deployment_id: Optional[str] = None
+    github_repo: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -134,6 +150,8 @@ class ProjectResponse(BaseModel):
     files: Dict[str, str]
     tech_stack: List[str]
     deployed_url: Optional[str]
+    deployment_id: Optional[str]
+    github_repo: Optional[str]
     created_at: str
     updated_at: str
 
@@ -162,12 +180,39 @@ class CreditUsage(BaseModel):
     task_type: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+class Deployment(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    project_id: str
+    user_id: str
+    subdomain: str
+    status: str = "deploying"
+    url: str
+    files: Dict[str, str] = Field(default_factory=dict)
+    logs: List[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class GitHubRepo(BaseModel):
+    id: int
+    name: str
+    full_name: str
+    description: Optional[str]
+    html_url: str
+    clone_url: str
+    language: Optional[str]
+    stargazers_count: int
+    forks_count: int
+    private: bool
+    updated_at: str
+
 class SubscriptionPlan(BaseModel):
     name: str
     price: int
     credits: int
     features: List[str]
     stripe_price_id: Optional[str] = None
+    stripe_product_id: Optional[str] = None
 
 # Subscription Plans
 SUBSCRIPTION_PLANS = {
@@ -227,6 +272,9 @@ def create_refresh_token(data: dict) -> str:
     to_encode.update({"exp": expire, "type": "refresh"})
     return jwt.encode(to_encode, JWT_REFRESH_SECRET, algorithm=JWT_ALGORITHM)
 
+def generate_verification_token() -> str:
+    return secrets.token_urlsafe(32)
+
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> User:
     try:
         payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
@@ -256,6 +304,9 @@ def user_to_response(user: User) -> UserResponse:
         credits=user.credits,
         credits_used=user.credits_used,
         is_admin=user.is_admin,
+        email_verified=user.email_verified,
+        github_username=user.github_username,
+        avatar_url=user.avatar_url,
         created_at=user.created_at.isoformat() if isinstance(user.created_at, datetime) else user.created_at
     )
 
@@ -270,6 +321,8 @@ def project_to_response(project: Project) -> ProjectResponse:
         files=project.files,
         tech_stack=project.tech_stack,
         deployed_url=project.deployed_url,
+        deployment_id=project.deployment_id,
+        github_repo=project.github_repo,
         created_at=project.created_at.isoformat() if isinstance(project.created_at, datetime) else project.created_at,
         updated_at=project.updated_at.isoformat() if isinstance(project.updated_at, datetime) else project.updated_at
     )
@@ -279,7 +332,7 @@ def project_to_response(project: Project) -> ProjectResponse:
 async def send_email(to_email: str, subject: str, html_content: str):
     if not SENDGRID_API_KEY:
         logger.warning("SendGrid API key not configured, skipping email")
-        return
+        return False
     try:
         message = Mail(
             from_email=EMAIL_FROM,
@@ -290,13 +343,68 @@ async def send_email(to_email: str, subject: str, html_content: str):
         sg = SendGridAPIClient(SENDGRID_API_KEY)
         sg.send(message)
         logger.info(f"Email sent to {to_email}")
+        return True
     except Exception as e:
         logger.error(f"Failed to send email: {e}")
+        return False
+
+async def send_verification_email(email: str, name: str, token: str):
+    verify_url = f"{FRONTEND_URL}/verify-email?token={token}"
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: linear-gradient(135deg, #3B82F6, #10B981); padding: 30px; text-align: center;">
+            <h1 style="color: white; margin: 0;">CursorCode AI</h1>
+        </div>
+        <div style="padding: 30px; background: #f8f9fa;">
+            <h2 style="color: #333;">Verify your email, {name}!</h2>
+            <p style="color: #666; line-height: 1.6;">
+                Thanks for signing up for CursorCode AI. Please verify your email address to get started.
+            </p>
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="{verify_url}" style="background: #3B82F6; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
+                    Verify Email Address
+                </a>
+            </div>
+            <p style="color: #999; font-size: 12px;">
+                If you didn't create an account, you can safely ignore this email.
+            </p>
+        </div>
+    </div>
+    """
+    return await send_email(email, "Verify your CursorCode AI account", html_content)
+
+async def send_welcome_email(email: str, name: str):
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: linear-gradient(135deg, #3B82F6, #10B981); padding: 30px; text-align: center;">
+            <h1 style="color: white; margin: 0;">Welcome to CursorCode AI!</h1>
+        </div>
+        <div style="padding: 30px; background: #f8f9fa;">
+            <h2 style="color: #333;">You're all set, {name}!</h2>
+            <p style="color: #666; line-height: 1.6;">
+                Your email has been verified. You now have access to:
+            </p>
+            <ul style="color: #666; line-height: 1.8;">
+                <li>10 free AI credits to start building</li>
+                <li>Multi-agent code generation powered by xAI Grok</li>
+                <li>One-click deployment to cursorcode.app</li>
+            </ul>
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="{FRONTEND_URL}/dashboard" style="background: #3B82F6; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
+                    Start Building
+                </a>
+            </div>
+            <p style="color: #999; font-size: 12px;">
+                Build Anything. Automatically. With AI.
+            </p>
+        </div>
+    </div>
+    """
+    return await send_email(email, "Welcome to CursorCode AI - Let's Build!", html_content)
 
 # ==================== AI HELPERS ====================
 
 def select_model(task_type: str) -> str:
-    """Intelligent model routing based on task type"""
     routing = {
         "architecture": DEFAULT_XAI_MODEL,
         "code_generation": FAST_REASONING_MODEL,
@@ -308,7 +416,6 @@ def select_model(task_type: str) -> str:
     return routing.get(task_type, FAST_REASONING_MODEL)
 
 def calculate_credits(model: str, task_type: str) -> int:
-    """Calculate credits based on model and task complexity"""
     base_credits = {
         DEFAULT_XAI_MODEL: 3,
         FAST_REASONING_MODEL: 2,
@@ -317,9 +424,7 @@ def calculate_credits(model: str, task_type: str) -> int:
     return base_credits.get(model, 2)
 
 async def call_xai_api(prompt: str, model: str, system_message: str = None) -> str:
-    """Call xAI API for code generation"""
     if not XAI_API_KEY:
-        # Demo mode - return mock response
         return f"""// Generated by CursorCode AI using {model}
 // This is a demo response - configure XAI_API_KEY for real generation
 
@@ -355,8 +460,8 @@ export default function GeneratedComponent() {{
         "temperature": 0.7
     }
     
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.post(
+    async with httpx.AsyncClient(timeout=60.0) as http_client:
+        response = await http_client.post(
             f"{XAI_BASE_URL}/chat/completions",
             headers=headers,
             json=payload
@@ -364,6 +469,60 @@ export default function GeneratedComponent() {{
         response.raise_for_status()
         data = response.json()
         return data["choices"][0]["message"]["content"]
+
+# ==================== STRIPE HELPERS ====================
+
+async def ensure_stripe_products():
+    """Create Stripe products and prices if they don't exist"""
+    if not stripe.api_key:
+        logger.warning("Stripe API key not configured")
+        return
+    
+    try:
+        # Check if products exist
+        products = stripe.Product.list(limit=10)
+        existing_names = {p.name: p.id for p in products.data}
+        
+        for plan_key, plan in SUBSCRIPTION_PLANS.items():
+            if plan.price == 0:  # Skip free tier
+                continue
+            
+            product_name = f"CursorCode AI {plan.name}"
+            
+            if product_name not in existing_names:
+                # Create product
+                product = stripe.Product.create(
+                    name=product_name,
+                    description=f"{plan.credits} AI credits/month - " + ", ".join(plan.features[:2]),
+                    metadata={"plan": plan_key}
+                )
+                product_id = product.id
+                logger.info(f"Created Stripe product: {product_name}")
+            else:
+                product_id = existing_names[product_name]
+            
+            # Check if price exists for this product
+            prices = stripe.Price.list(product=product_id, active=True, limit=1)
+            
+            if not prices.data:
+                # Create price
+                price = stripe.Price.create(
+                    product=product_id,
+                    unit_amount=plan.price * 100,  # Stripe uses cents
+                    currency="usd",
+                    recurring={"interval": "month"},
+                    metadata={"plan": plan_key}
+                )
+                SUBSCRIPTION_PLANS[plan_key].stripe_price_id = price.id
+                SUBSCRIPTION_PLANS[plan_key].stripe_product_id = product_id
+                logger.info(f"Created Stripe price for {plan.name}: {price.id}")
+            else:
+                SUBSCRIPTION_PLANS[plan_key].stripe_price_id = prices.data[0].id
+                SUBSCRIPTION_PLANS[plan_key].stripe_product_id = product_id
+        
+        logger.info("Stripe products and prices initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize Stripe products: {e}")
 
 # ==================== AUTH ROUTES ====================
 
@@ -373,28 +532,22 @@ async def signup(user_data: UserCreate, background_tasks: BackgroundTasks):
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
     
+    verification_token = generate_verification_token()
+    
     user = User(
         email=user_data.email,
         name=user_data.name,
-        password_hash=hash_password(user_data.password)
+        password_hash=hash_password(user_data.password),
+        email_verified=False,
+        verification_token=verification_token
     )
     
     doc = user.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
     await db.users.insert_one(doc)
     
-    # Send welcome email
-    background_tasks.add_task(
-        send_email,
-        user.email,
-        "Welcome to CursorCode AI!",
-        f"""
-        <h1>Welcome to CursorCode AI, {user.name}!</h1>
-        <p>You're now part of the future of autonomous software development.</p>
-        <p>Your starter plan includes 10 AI credits to get you building immediately.</p>
-        <p>Build Anything. Automatically. With AI.</p>
-        """
-    )
+    # Send verification email
+    background_tasks.add_task(send_verification_email, user.email, user.name, verification_token)
     
     access_token = create_access_token({"sub": user.id})
     refresh_token = create_refresh_token({"sub": user.id})
@@ -404,6 +557,37 @@ async def signup(user_data: UserCreate, background_tasks: BackgroundTasks):
         refresh_token=refresh_token,
         user=user_to_response(user)
     )
+
+@api_router.get("/auth/verify-email")
+async def verify_email(token: str, background_tasks: BackgroundTasks):
+    user_doc = await db.users.find_one({"verification_token": token}, {"_id": 0})
+    if not user_doc:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification token")
+    
+    await db.users.update_one(
+        {"verification_token": token},
+        {"$set": {"email_verified": True, "verification_token": None}}
+    )
+    
+    # Send welcome email
+    background_tasks.add_task(send_welcome_email, user_doc['email'], user_doc['name'])
+    
+    return {"message": "Email verified successfully", "redirect": f"{FRONTEND_URL}/dashboard"}
+
+@api_router.post("/auth/resend-verification")
+async def resend_verification(user: User = Depends(get_current_user), background_tasks: BackgroundTasks = None):
+    if user.email_verified:
+        raise HTTPException(status_code=400, detail="Email already verified")
+    
+    new_token = generate_verification_token()
+    await db.users.update_one(
+        {"id": user.id},
+        {"$set": {"verification_token": new_token}}
+    )
+    
+    background_tasks.add_task(send_verification_email, user.email, user.name, new_token)
+    
+    return {"message": "Verification email sent"}
 
 @api_router.post("/auth/login", response_model=TokenResponse)
 async def login(credentials: UserLogin):
@@ -415,7 +599,8 @@ async def login(credentials: UserLogin):
         user_doc['created_at'] = datetime.fromisoformat(user_doc['created_at'])
     
     user = User(**user_doc)
-    if not verify_password(credentials.password, user.password_hash):
+    
+    if not user.password_hash or not verify_password(credentials.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     access_token = create_access_token({"sub": user.id})
@@ -453,6 +638,236 @@ async def refresh_token(refresh_token: str = Header(...)):
         )
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+# ==================== GITHUB OAUTH ROUTES ====================
+
+@api_router.get("/auth/github")
+async def github_login():
+    """Initiate GitHub OAuth flow"""
+    if not GITHUB_CLIENT_ID:
+        raise HTTPException(status_code=500, detail="GitHub OAuth not configured")
+    
+    state = secrets.token_urlsafe(16)
+    params = {
+        "client_id": GITHUB_CLIENT_ID,
+        "redirect_uri": f"{FRONTEND_URL}/auth/github/callback",
+        "scope": "user repo",
+        "state": state
+    }
+    
+    github_auth_url = f"https://github.com/login/oauth/authorize?{urlencode(params)}"
+    return {"url": github_auth_url, "state": state}
+
+@api_router.post("/auth/github/callback")
+async def github_callback(code: str, background_tasks: BackgroundTasks):
+    """Exchange GitHub code for access token and create/login user"""
+    if not GITHUB_CLIENT_ID or not GITHUB_CLIENT_SECRET:
+        raise HTTPException(status_code=500, detail="GitHub OAuth not configured")
+    
+    try:
+        # Exchange code for access token
+        async with httpx.AsyncClient() as http_client:
+            token_response = await http_client.post(
+                "https://github.com/login/oauth/access_token",
+                json={
+                    "client_id": GITHUB_CLIENT_ID,
+                    "client_secret": GITHUB_CLIENT_SECRET,
+                    "code": code
+                },
+                headers={"Accept": "application/json"}
+            )
+            token_data = token_response.json()
+        
+        if "error" in token_data:
+            raise HTTPException(status_code=400, detail=f"GitHub auth failed: {token_data.get('error_description', token_data['error'])}")
+        
+        github_token = token_data.get("access_token")
+        
+        # Fetch GitHub user info
+        async with httpx.AsyncClient() as http_client:
+            user_response = await http_client.get(
+                "https://api.github.com/user",
+                headers={
+                    "Authorization": f"Bearer {github_token}",
+                    "Accept": "application/vnd.github+json"
+                }
+            )
+            github_user = user_response.json()
+        
+        # Check if user exists
+        existing_user = await db.users.find_one({"github_id": github_user["id"]}, {"_id": 0})
+        
+        if existing_user:
+            # Update GitHub token
+            await db.users.update_one(
+                {"github_id": github_user["id"]},
+                {"$set": {"github_access_token": github_token, "avatar_url": github_user.get("avatar_url")}}
+            )
+            if isinstance(existing_user.get('created_at'), str):
+                existing_user['created_at'] = datetime.fromisoformat(existing_user['created_at'])
+            user = User(**existing_user)
+        else:
+            # Create new user
+            email = github_user.get("email") or f"{github_user['login']}@github.cursorcode.ai"
+            
+            # Check if email exists
+            email_user = await db.users.find_one({"email": email}, {"_id": 0})
+            if email_user:
+                # Link GitHub to existing account
+                await db.users.update_one(
+                    {"email": email},
+                    {"$set": {
+                        "github_id": github_user["id"],
+                        "github_username": github_user["login"],
+                        "github_access_token": github_token,
+                        "avatar_url": github_user.get("avatar_url"),
+                        "email_verified": True
+                    }}
+                )
+                if isinstance(email_user.get('created_at'), str):
+                    email_user['created_at'] = datetime.fromisoformat(email_user['created_at'])
+                user = User(**email_user)
+            else:
+                # Create new user
+                user = User(
+                    email=email,
+                    name=github_user.get("name") or github_user["login"],
+                    password_hash="",
+                    github_id=github_user["id"],
+                    github_username=github_user["login"],
+                    github_access_token=github_token,
+                    avatar_url=github_user.get("avatar_url"),
+                    email_verified=True  # GitHub emails are verified
+                )
+                doc = user.model_dump()
+                doc['created_at'] = doc['created_at'].isoformat()
+                await db.users.insert_one(doc)
+                
+                # Send welcome email
+                background_tasks.add_task(send_welcome_email, user.email, user.name)
+        
+        access_token = create_access_token({"sub": user.id})
+        refresh_token = create_refresh_token({"sub": user.id})
+        
+        return TokenResponse(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            user=user_to_response(user)
+        )
+    
+    except Exception as e:
+        logger.error(f"GitHub OAuth error: {e}")
+        raise HTTPException(status_code=500, detail="GitHub authentication failed")
+
+@api_router.get("/github/repos", response_model=List[GitHubRepo])
+async def get_github_repos(user: User = Depends(get_current_user)):
+    """Fetch user's GitHub repositories"""
+    if not user.github_access_token:
+        raise HTTPException(status_code=400, detail="GitHub account not connected")
+    
+    try:
+        async with httpx.AsyncClient() as http_client:
+            response = await http_client.get(
+                "https://api.github.com/user/repos",
+                headers={
+                    "Authorization": f"Bearer {user.github_access_token}",
+                    "Accept": "application/vnd.github+json"
+                },
+                params={"per_page": 100, "sort": "updated", "direction": "desc"}
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(status_code=400, detail="Failed to fetch repositories")
+            
+            repos = response.json()
+            return [
+                GitHubRepo(
+                    id=repo["id"],
+                    name=repo["name"],
+                    full_name=repo["full_name"],
+                    description=repo.get("description"),
+                    html_url=repo["html_url"],
+                    clone_url=repo["clone_url"],
+                    language=repo.get("language"),
+                    stargazers_count=repo["stargazers_count"],
+                    forks_count=repo["forks_count"],
+                    private=repo["private"],
+                    updated_at=repo["updated_at"]
+                )
+                for repo in repos
+            ]
+    except httpx.HTTPError as e:
+        logger.error(f"GitHub API error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch repositories")
+
+@api_router.post("/github/import/{repo_full_name:path}")
+async def import_github_repo(repo_full_name: str, user: User = Depends(get_current_user)):
+    """Import a GitHub repository as a new project"""
+    if not user.github_access_token:
+        raise HTTPException(status_code=400, detail="GitHub account not connected")
+    
+    try:
+        async with httpx.AsyncClient() as http_client:
+            # Get repo info
+            repo_response = await http_client.get(
+                f"https://api.github.com/repos/{repo_full_name}",
+                headers={
+                    "Authorization": f"Bearer {user.github_access_token}",
+                    "Accept": "application/vnd.github+json"
+                }
+            )
+            
+            if repo_response.status_code != 200:
+                raise HTTPException(status_code=404, detail="Repository not found")
+            
+            repo = repo_response.json()
+            
+            # Get repo contents (root level)
+            contents_response = await http_client.get(
+                f"https://api.github.com/repos/{repo_full_name}/contents",
+                headers={
+                    "Authorization": f"Bearer {user.github_access_token}",
+                    "Accept": "application/vnd.github+json"
+                }
+            )
+            
+            files = {}
+            if contents_response.status_code == 200:
+                contents = contents_response.json()
+                # Fetch up to 10 code files
+                code_extensions = ['.js', '.jsx', '.ts', '.tsx', '.py', '.html', '.css', '.json', '.md']
+                for item in contents[:20]:
+                    if item["type"] == "file" and any(item["name"].endswith(ext) for ext in code_extensions):
+                        if item["size"] < 50000:  # Skip files larger than 50KB
+                            file_response = await http_client.get(
+                                item["download_url"],
+                                headers={"Authorization": f"Bearer {user.github_access_token}"}
+                            )
+                            if file_response.status_code == 200:
+                                files[item["name"]] = file_response.text
+        
+        # Create project
+        project = Project(
+            user_id=user.id,
+            name=repo["name"],
+            description=repo.get("description") or f"Imported from GitHub: {repo_full_name}",
+            prompt=f"Imported from GitHub repository: {repo['html_url']}",
+            status="imported",
+            files=files,
+            tech_stack=[repo.get("language")] if repo.get("language") else [],
+            github_repo=repo_full_name
+        )
+        
+        doc = project.model_dump()
+        doc['created_at'] = doc['created_at'].isoformat()
+        doc['updated_at'] = doc['updated_at'].isoformat()
+        await db.projects.insert_one(doc)
+        
+        return project_to_response(project)
+    
+    except httpx.HTTPError as e:
+        logger.error(f"GitHub import error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to import repository")
 
 # ==================== PROJECT ROUTES ====================
 
@@ -540,7 +955,6 @@ async def update_project_files(project_id: str, files: Dict[str, str], user: Use
 
 @api_router.post("/ai/generate", response_model=AIGenerateResponse)
 async def generate_code(request: AIGenerateRequest, user: User = Depends(get_current_user)):
-    # Check credits
     model = request.model or select_model(request.task_type)
     credits_needed = calculate_credits(model, request.task_type)
     
@@ -548,12 +962,10 @@ async def generate_code(request: AIGenerateRequest, user: User = Depends(get_cur
     if remaining_credits < credits_needed:
         raise HTTPException(status_code=402, detail="Insufficient credits")
     
-    # Verify project belongs to user
     project_doc = await db.projects.find_one({"id": request.project_id, "user_id": user.id}, {"_id": 0})
     if not project_doc:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    # Generate code
     system_message = """You are CursorCode AI, an elite autonomous AI software engineering system. 
     Generate clean, production-ready, well-documented code. 
     Include proper error handling, TypeScript types when applicable, and follow best practices."""
@@ -564,13 +976,11 @@ async def generate_code(request: AIGenerateRequest, user: User = Depends(get_cur
         logger.error(f"AI generation failed: {e}")
         raise HTTPException(status_code=500, detail="AI generation failed")
     
-    # Update user credits
     await db.users.update_one(
         {"id": user.id},
         {"$inc": {"credits_used": credits_needed}}
     )
     
-    # Log usage
     usage = CreditUsage(
         user_id=user.id,
         project_id=request.project_id,
@@ -597,26 +1007,109 @@ async def generate_code(request: AIGenerateRequest, user: User = Depends(get_cur
 async def get_ai_models():
     return {
         "models": [
-            {
-                "id": DEFAULT_XAI_MODEL,
-                "name": "Grok 4 (Frontier)",
-                "description": "Deep reasoning for architecture and complex tasks",
-                "credits_per_use": 3
-            },
-            {
-                "id": FAST_REASONING_MODEL,
-                "name": "Grok 4 Fast Reasoning",
-                "description": "Optimized for agentic workflows and tool-calling",
-                "credits_per_use": 2
-            },
-            {
-                "id": FAST_NON_REASONING_MODEL,
-                "name": "Grok 4 Fast",
-                "description": "High-throughput generation for simple tasks",
-                "credits_per_use": 1
-            }
+            {"id": DEFAULT_XAI_MODEL, "name": "Grok 4 (Frontier)", "description": "Deep reasoning for architecture and complex tasks", "credits_per_use": 3},
+            {"id": FAST_REASONING_MODEL, "name": "Grok 4 Fast Reasoning", "description": "Optimized for agentic workflows and tool-calling", "credits_per_use": 2},
+            {"id": FAST_NON_REASONING_MODEL, "name": "Grok 4 Fast", "description": "High-throughput generation for simple tasks", "credits_per_use": 1}
         ]
     }
+
+# ==================== DEPLOYMENT ROUTES ====================
+
+@api_router.post("/deploy/{project_id}")
+async def deploy_project(project_id: str, user: User = Depends(get_current_user)):
+    """Deploy project to simulated cursorcode.app infrastructure"""
+    project_doc = await db.projects.find_one({"id": project_id, "user_id": user.id}, {"_id": 0})
+    if not project_doc:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Generate unique subdomain
+    project_name = project_doc['name'].lower().replace(' ', '-').replace('_', '-')
+    project_name = ''.join(c for c in project_name if c.isalnum() or c == '-')[:30]
+    subdomain = f"{project_name}-{project_id[:8]}"
+    deployed_url = f"https://{subdomain}.cursorcode.app"
+    
+    # Create deployment record
+    deployment = Deployment(
+        project_id=project_id,
+        user_id=user.id,
+        subdomain=subdomain,
+        status="deployed",
+        url=deployed_url,
+        files=project_doc.get('files', {}),
+        logs=[
+            f"[{datetime.now(timezone.utc).isoformat()}] Deployment initiated",
+            f"[{datetime.now(timezone.utc).isoformat()}] Building project...",
+            f"[{datetime.now(timezone.utc).isoformat()}] Installing dependencies...",
+            f"[{datetime.now(timezone.utc).isoformat()}] Configuring SSL certificate...",
+            f"[{datetime.now(timezone.utc).isoformat()}] Deployment successful!"
+        ]
+    )
+    
+    deployment_doc = deployment.model_dump()
+    deployment_doc['created_at'] = deployment_doc['created_at'].isoformat()
+    deployment_doc['updated_at'] = deployment_doc['updated_at'].isoformat()
+    await db.deployments.insert_one(deployment_doc)
+    
+    # Update project
+    await db.projects.update_one(
+        {"id": project_id},
+        {"$set": {
+            "status": "deployed",
+            "deployed_url": deployed_url,
+            "deployment_id": deployment.id,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    return {
+        "deployment_id": deployment.id,
+        "deployed_url": deployed_url,
+        "subdomain": subdomain,
+        "status": "deployed",
+        "logs": deployment.logs
+    }
+
+@api_router.get("/deployments/{deployment_id}")
+async def get_deployment(deployment_id: str, user: User = Depends(get_current_user)):
+    """Get deployment details"""
+    deployment_doc = await db.deployments.find_one(
+        {"id": deployment_id, "user_id": user.id},
+        {"_id": 0}
+    )
+    if not deployment_doc:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+    
+    return deployment_doc
+
+@api_router.get("/deployments")
+async def list_deployments(user: User = Depends(get_current_user)):
+    """List all deployments for user"""
+    deployments = await db.deployments.find(
+        {"user_id": user.id},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(50)
+    
+    return {"deployments": deployments}
+
+@api_router.delete("/deployments/{deployment_id}")
+async def delete_deployment(deployment_id: str, user: User = Depends(get_current_user)):
+    """Delete a deployment"""
+    deployment_doc = await db.deployments.find_one(
+        {"id": deployment_id, "user_id": user.id},
+        {"_id": 0}
+    )
+    if not deployment_doc:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+    
+    # Update project status
+    await db.projects.update_one(
+        {"id": deployment_doc["project_id"]},
+        {"$set": {"status": "draft", "deployed_url": None, "deployment_id": None}}
+    )
+    
+    await db.deployments.delete_one({"id": deployment_id})
+    
+    return {"message": "Deployment deleted"}
 
 # ==================== SUBSCRIPTION ROUTES ====================
 
@@ -631,12 +1124,16 @@ async def create_checkout_session(plan: str, user: User = Depends(get_current_us
     
     plan_data = SUBSCRIPTION_PLANS[plan]
     
-    if not stripe.api_key or not plan_data.stripe_price_id:
-        # Demo mode
-        return {"url": f"/dashboard?plan={plan}&demo=true", "demo": True}
+    if not stripe.api_key:
+        return {"url": f"{FRONTEND_URL}/dashboard?plan={plan}&demo=true", "demo": True}
+    
+    # Ensure products exist
+    await ensure_stripe_products()
+    
+    if not plan_data.stripe_price_id:
+        return {"url": f"{FRONTEND_URL}/dashboard?plan={plan}&demo=true", "demo": True}
     
     try:
-        # Create or get Stripe customer
         if not user.stripe_customer_id:
             customer = stripe.Customer.create(
                 email=user.email,
@@ -651,27 +1148,78 @@ async def create_checkout_session(plan: str, user: User = Depends(get_current_us
         else:
             customer_id = user.stripe_customer_id
         
-        # Create checkout session
         session = stripe.checkout.Session.create(
             customer=customer_id,
             payment_method_types=["card"],
             line_items=[{"price": plan_data.stripe_price_id, "quantity": 1}],
             mode="subscription",
-            success_url=f"{os.environ.get('FRONTEND_URL', 'http://localhost:3000')}/dashboard?success=true",
-            cancel_url=f"{os.environ.get('FRONTEND_URL', 'http://localhost:3000')}/pricing?canceled=true",
+            success_url=f"{FRONTEND_URL}/dashboard?success=true&plan={plan}",
+            cancel_url=f"{FRONTEND_URL}/pricing?canceled=true",
             metadata={"user_id": user.id, "plan": plan}
         )
         
-        return {"url": session.url}
-    except Exception as e:
+        return {"url": session.url, "session_id": session.id}
+    except stripe.error.StripeError as e:
         logger.error(f"Stripe checkout failed: {e}")
         raise HTTPException(status_code=500, detail="Payment processing failed")
 
 @api_router.post("/subscriptions/webhook")
-async def stripe_webhook(request: Any):
-    # In production, verify webhook signature
-    # For demo, just log
-    logger.info("Stripe webhook received")
+async def stripe_webhook(request: Request):
+    """Handle Stripe webhook events"""
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature")
+    
+    if STRIPE_WEBHOOK_SECRET and sig_header:
+        try:
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, STRIPE_WEBHOOK_SECRET
+            )
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid payload")
+        except stripe.error.SignatureVerificationError:
+            raise HTTPException(status_code=400, detail="Invalid signature")
+    else:
+        # For demo mode without signature verification
+        import json
+        event = json.loads(payload)
+    
+    event_type = event.get("type", "")
+    
+    if event_type == "checkout.session.completed":
+        session = event["data"]["object"]
+        user_id = session.get("metadata", {}).get("user_id")
+        plan = session.get("metadata", {}).get("plan")
+        
+        if user_id and plan:
+            plan_data = SUBSCRIPTION_PLANS.get(plan)
+            if plan_data:
+                await db.users.update_one(
+                    {"id": user_id},
+                    {"$set": {
+                        "plan": plan,
+                        "credits": plan_data.credits,
+                        "credits_used": 0,
+                        "stripe_subscription_id": session.get("subscription")
+                    }}
+                )
+                logger.info(f"User {user_id} upgraded to {plan}")
+    
+    elif event_type == "customer.subscription.deleted":
+        subscription = event["data"]["object"]
+        customer_id = subscription.get("customer")
+        
+        if customer_id:
+            await db.users.update_one(
+                {"stripe_customer_id": customer_id},
+                {"$set": {
+                    "plan": "starter",
+                    "credits": 10,
+                    "credits_used": 0,
+                    "stripe_subscription_id": None
+                }}
+            )
+            logger.info(f"Customer {customer_id} subscription canceled")
+    
     return {"received": True}
 
 @api_router.get("/subscriptions/current")
@@ -685,25 +1233,6 @@ async def get_current_subscription(user: User = Depends(get_current_user)):
         "credits_remaining": user.credits - user.credits_used
     }
 
-# ==================== DEPLOYMENT ROUTES ====================
-
-@api_router.post("/deploy/{project_id}")
-async def deploy_project(project_id: str, user: User = Depends(get_current_user)):
-    project_doc = await db.projects.find_one({"id": project_id, "user_id": user.id}, {"_id": 0})
-    if not project_doc:
-        raise HTTPException(status_code=404, detail="Project not found")
-    
-    # Generate deployment URL
-    subdomain = f"{project_doc['name'].lower().replace(' ', '-')}-{project_id[:8]}"
-    deployed_url = f"https://{subdomain}.cursorcode.app"
-    
-    await db.projects.update_one(
-        {"id": project_id},
-        {"$set": {"status": "deployed", "deployed_url": deployed_url, "updated_at": datetime.now(timezone.utc).isoformat()}}
-    )
-    
-    return {"deployed_url": deployed_url, "status": "deployed"}
-
 # ==================== ADMIN ROUTES ====================
 
 @api_router.get("/admin/stats")
@@ -711,14 +1240,13 @@ async def get_admin_stats(user: User = Depends(get_admin_user)):
     total_users = await db.users.count_documents({})
     total_projects = await db.projects.count_documents({})
     total_generations = await db.credit_usage.count_documents({})
+    total_deployments = await db.deployments.count_documents({})
     
-    # Get plan distribution
     plan_distribution = {}
     for plan in SUBSCRIPTION_PLANS.keys():
         count = await db.users.count_documents({"plan": plan})
         plan_distribution[plan] = count
     
-    # Calculate revenue (simplified)
     revenue = sum(
         SUBSCRIPTION_PLANS[plan].price * count 
         for plan, count in plan_distribution.items()
@@ -728,13 +1256,14 @@ async def get_admin_stats(user: User = Depends(get_admin_user)):
         "total_users": total_users,
         "total_projects": total_projects,
         "total_generations": total_generations,
+        "total_deployments": total_deployments,
         "plan_distribution": plan_distribution,
         "monthly_revenue": revenue
     }
 
 @api_router.get("/admin/users")
 async def get_admin_users(user: User = Depends(get_admin_user), limit: int = 50, skip: int = 0):
-    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).skip(skip).limit(limit).to_list(limit)
+    users = await db.users.find({}, {"_id": 0, "password_hash": 0, "github_access_token": 0, "verification_token": 0}).skip(skip).limit(limit).to_list(limit)
     return {"users": users, "total": await db.users.count_documents({})}
 
 @api_router.get("/admin/usage")
@@ -766,6 +1295,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+async def startup_event():
+    # Initialize Stripe products if API key is configured
+    if stripe.api_key:
+        await ensure_stripe_products()
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
