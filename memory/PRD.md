@@ -1,75 +1,61 @@
 # CursorCode AI - Product Requirements Document
 
 ## Original Problem Statement
-Build CursorCode AI - an autonomous AI software engineering platform powered by xAI Grok with intelligent multi-model routing. Full MVP including landing page, auth, user dashboard, AI code generation, Stripe payments, admin dashboard.
+Build CursorCode AI - an autonomous AI software engineering platform powered by xAI Grok with intelligent multi-model routing.
 
 ## Architecture
 - **Frontend**: React 19 + Tailwind CSS + Shadcn/UI + Framer Motion
-- **Backend**: FastAPI + MongoDB + JWT Auth
+- **Backend**: FastAPI + MongoDB + JWT Auth + GitHub OAuth
 - **AI**: xAI Grok API with multi-model routing
-- **Payments**: Stripe subscriptions
-- **Email**: SendGrid
+- **Payments**: Stripe (auto-created products/prices)
+- **Email**: SendGrid with verification flow
+- **Deployment**: Simulated cursorcode.app infrastructure
 
 ## User Personas
-1. **Solo Developer**: Wants to build apps faster with AI assistance
-2. **Startup Team**: Needs rapid prototyping and deployment
-3. **Enterprise**: Requires security, compliance, and scalability
-
-## Core Requirements (Static)
-- [x] User authentication (signup/login/JWT)
-- [x] Project management (CRUD)
-- [x] AI code generation interface
-- [x] Multi-model AI routing
-- [x] Subscription billing
-- [x] Admin dashboard
-- [x] One-click deployment simulation
+1. **Solo Developer**: Build apps faster with AI assistance
+2. **Startup Team**: Rapid prototyping and deployment
+3. **Enterprise**: Security, compliance, and scalability
 
 ## What's Been Implemented (Feb 6, 2025)
 
-### Phase 1 - MVP Complete
-- Landing page with hero, features (bento grid), pricing, CTAs
-- User authentication with JWT tokens
+### Phase 1 - Core MVP
+- Landing page with hero, features, pricing, CTAs
+- User auth with JWT tokens and email verification
 - User dashboard with project management
-- AI code generation with Monaco editor
-- Project workspace with file management
+- AI code generation workspace with Monaco editor
 - Settings page (account, billing, API keys)
 - Admin dashboard with analytics
 - Pricing page with 5 subscription tiers
-- Custom logo integration
+- Custom CursorCode AI logo
 - Dark "Cyberpunk Precision" theme
-- Responsive design
 
-### Backend APIs
-- Auth: signup, login, refresh, me
-- Projects: CRUD + file management
-- AI: generate, models list
-- Subscriptions: plans, checkout, current
-- Admin: stats, users, usage
-- Deploy: project deployment
+### Phase 2 - Enhanced Features
+- **Stripe Integration**: Auto-created products/prices on startup
+- **Email Verification**: SendGrid-powered verification flow
+- **GitHub OAuth**: Login/signup with GitHub
+- **GitHub Repos**: List and import repositories
+- **Deployment Infrastructure**: Simulated deployment with subdomain URLs
+- **Deployment Management**: List, view, delete deployments
 
-## Prioritized Backlog
-
-### P0 (Critical)
-- [x] Core auth flow
-- [x] Project CRUD
-- [x] AI generation
-- [ ] Stripe webhook handling (production)
-
-### P1 (High)
-- [ ] Real xAI API integration (when keys provided)
-- [ ] SendGrid email verification
-- [ ] Project versioning
-- [ ] Real deployment to cursorcode.app
-
-### P2 (Medium)
-- [ ] GitHub integration
-- [ ] Team/org features
-- [ ] Advanced security scans
-- [ ] CI/CD pipeline integration
+## Environment Variables Required (Render)
+```
+MONGO_URL=
+DB_NAME=cursorcode
+JWT_SECRET_KEY=
+JWT_REFRESH_SECRET=
+XAI_API_KEY=
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+SENDGRID_API_KEY=
+EMAIL_FROM=info@cursorcode.ai
+GITHUB_OAUTH_CLIENT_ID=
+GITHUB_OAUTH_CLIENT_SECRET=
+FRONTEND_URL=https://cursorcode.ai
+```
 
 ## Next Tasks
-1. Configure production xAI API keys
-2. Set up Stripe products and prices
-3. Implement email verification flow
+1. Configure real xAI API key for AI generation
+2. Set up Stripe webhook endpoint in production
+3. Configure domain and SSL for cursorcode.app deployments
 4. Add project version history
-5. Build actual deployment infrastructure
+5. Implement real file hosting for deployments
