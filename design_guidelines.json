@@ -1,0 +1,142 @@
+{
+  "brand_identity": {
+    "name": "CursorCode AI",
+    "tagline": "Build Anything. Automatically.",
+    "mission": "Replace entire development teams with autonomous AI agents.",
+    "aesthetic": "Cyberpunk Precision meets Swiss Clarity. Dark, glowing, data-dense but breathable.",
+    "emotional_tone": "Powerful, Autonomous, Intelligent, Fast, Premium"
+  },
+  "typography": {
+    "headings": {
+      "font_family": "Outfit, sans-serif",
+      "weights": ["500", "700"],
+      "usage": "All section titles, hero text, modal headers. Letter-spacing: -0.02em.",
+      "fallback": "system-ui"
+    },
+    "body": {
+      "font_family": "Inter, sans-serif",
+      "weights": ["400", "500"],
+      "usage": "Paragraphs, UI labels, form inputs.",
+      "fallback": "sans-serif"
+    },
+    "code": {
+      "font_family": "JetBrains Mono, monospace",
+      "weights": ["400"],
+      "usage": "Code editors, terminal outputs, API keys, technical specs.",
+      "fallback": "monospace"
+    }
+  },
+  "colors": {
+    "theme": "dark",
+    "palette": {
+      "background": {
+        "default": "#050505",
+        "paper": "#09090B",
+        "subtle": "#18181B"
+      },
+      "primary": {
+        "main": "#3B82F6",
+        "hover": "#2563EB",
+        "foreground": "#FFFFFF",
+        "description": "Electric Blue - Use for primary actions, active states, and brand accents."
+      },
+      "secondary": {
+        "main": "#27272A",
+        "hover": "#3F3F46",
+        "foreground": "#FAFAFA",
+        "description": "Zinc 800 - Use for secondary buttons, borders, and cards."
+      },
+      "accent": {
+        "main": "#10B981",
+        "glow": "rgba(16, 185, 129, 0.5)",
+        "description": "Emerald Green - Use for 'Success', 'Deployed', 'Online' states and code generation success."
+      },
+      "text": {
+        "primary": "#EDEDED",
+        "secondary": "#A1A1AA",
+        "muted": "#52525B"
+      },
+      "border": {
+        "default": "#27272A",
+        "active": "#3F3F46"
+      },
+      "status": {
+        "error": "#EF4444",
+        "warning": "#F59E0B",
+        "info": "#3B82F6"
+      }
+    },
+    "gradients": {
+      "hero_glow": "radial-gradient(circle at 50% 50%, rgba(59, 130, 246, 0.15) 0%, rgba(5, 5, 5, 0) 70%)",
+      "card_hover": "linear-gradient(180deg, rgba(39, 39, 42, 0) 0%, rgba(39, 39, 42, 0.4) 100%)",
+      "text_gradient": "linear-gradient(to right, #FFFFFF, #A1A1AA)"
+    }
+  },
+  "layout_strategies": {
+    "marketing": {
+      "grid_system": "Bento Grid (Asymmetric)",
+      "spacing": "Loose (p-8 to p-24)",
+      "alignment": "Left-aligned headings, asymmetric visual balance.",
+      "container": "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"
+    },
+    "dashboard": {
+      "grid_system": "High Density Grid (12-column)",
+      "spacing": "Compact (p-4 to p-6)",
+      "structure": "Fixed Sidebar (Left), Scrollable Main Content (Right)",
+      "card_style": "Flat, 1px border, no shadow (unless hover)."
+    }
+  },
+  "component_rules": {
+    "buttons": {
+      "primary": "bg-primary text-white hover:bg-primary/90 rounded-md px-6 py-3 font-medium transition-all shadow-[0_0_20px_rgba(59,130,246,0.3)] hover:shadow-[0_0_30px_rgba(59,130,246,0.5)]",
+      "secondary": "bg-secondary text-white hover:bg-secondary/80 rounded-md px-6 py-3 font-medium border border-border",
+      "ghost": "hover:bg-white/5 text-text-secondary hover:text-white"
+    },
+    "cards": {
+      "marketing": "bg-background-paper/50 backdrop-blur-md border border-white/10 rounded-xl p-8 hover:border-primary/50 transition-colors group relative overflow-hidden",
+      "dashboard": "bg-background-paper border border-border rounded-lg p-5"
+    },
+    "inputs": {
+      "style": "bg-background-subtle border-border focus:border-primary focus:ring-1 focus:ring-primary rounded-md h-10 px-3 text-sm text-white placeholder:text-text-muted"
+    },
+    "navigation": {
+      "marketing_nav": "Fixed top, glassmorphism (bg-black/50 backdrop-blur-xl), border-b border-white/5",
+      "dashboard_sidebar": "Fixed left, w-64, bg-background-paper border-r border-border, h-screen"
+    }
+  },
+  "visual_enhancers": {
+    "glassmorphism": "backdrop-blur-xl bg-black/40 border border-white/10",
+    "noise_texture": "Use a subtle SVG noise overlay on the main background to reduce digital flatness.",
+    "glow_effects": "Use colored shadows (shadow-cyan-500/20) instead of black shadows for primary elements.",
+    "borders": "Use 1px borders with 10-20% opacity for a technical, schematic look."
+  },
+  "image_urls": {
+    "hero_background": "https://images.unsplash.com/photo-1760978632119-5069b6c9fb68?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMjd8MHwxfHNlYXJjaHwyfHxhYnN0cmFjdCUyMGZ1dHVyaXN0aWMlMjB0ZWNobm9sb2d5JTIwbmV0d29yayUyMGRhcmslMjBiYWNrZ3JvdW5kfGVufDB8fHx8MTc3MDM5NTIwOHww&ixlib=rb-4.1.0&q=85",
+    "feature_abstract": "https://images.unsplash.com/photo-1761599821310-da0d6356b4f3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMjd8MHwxfHNlYXJjaHwzfHxhYnN0cmFjdCUyMGZ1dHVyaXN0aWMlMjB0ZWNobm9sb2d5JTIwbmV0d29yayUyMGRhcmslMjBiYWNrZ3JvdW5kfGVufDB8fHx8MTc3MDM5NTIwOHww&ixlib=rb-4.1.0&q=85",
+    "coding_context": "https://images.unsplash.com/photo-1753998943228-73470750c597?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzOTB8MHwxfHNlYXJjaHwxfHxkZXZlbG9wZXIlMjBjb2RpbmclMjBsYXB0b3AlMjBkYXJrJTIwZW52aXJvbm1lbnR8ZW58MHx8fHwxNzcwMzk1MjEzfDA&ixlib=rb-4.1.0&q=85",
+    "logo_placeholder": "https://via.placeholder.com/40x40/3B82F6/FFFFFF?text=CC"
+  },
+  "instructions_to_main_agent": [
+    "1. INSTALL FONTS: Add '@fontsource/outfit', '@fontsource/inter', and '@fontsource/jetbrains-mono' to package.json immediately.",
+    "2. TAILWIND CONFIG: Update tailwind.config.js to include the custom colors (primary, secondary, accent, background-paper) defined in the 'colors' section.",
+    "3. SHADCN OVERRIDES: When using Shadcn components, ALWAYS override the default radius to 'rounded-md' or 'rounded-lg' and ensure borders are 'border-white/10' in dark mode.",
+    "4. NO GRADIENT TEXT: Do not use gradient text for body copy. Only use it for very short, high-impact headlines (max 3 words).",
+    "5. DATA-TESTID: Every interactive element (buttons, inputs, links) MUST have a 'data-testid' attribute (e.g., 'login-submit-btn').",
+    "6. MARKETING PAGE: Use the 'Bento Grid' layout for the features section. Do not just stack cards vertically.",
+    "7. DASHBOARD: The dashboard must feel like an IDE. Use split panes and dark backgrounds.",
+    "8. ANIMATION: Use 'framer-motion' for simple entrance animations (fade-up) on the landing page. Keep the dashboard snappy with minimal motion."
+  ],
+  "universal_guidelines": [
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients.",
+    "Don't make generic centered layouts, simplistic gradients, and uniform styling.",
+    "Create depth through layered design elements with z-index hierarchy.",
+    "Use glass-morphism effects with backdrop filters (12-24px blur).",
+    "You MUST NOT apply universal transition. Eg: 'transition: all'. This results in breaking transforms.",
+    "You MUST NOT center align the app container.",
+    "Always use modern button styles like pill-shaped, or sharp button with interaction animations.",
+    "NEVER use AI assistant Emoji characters like 🤖🧠 etc for icons.",
+    "Every interaction needs micro-animations - hover states, transitions.",
+    "Use 2-3x more spacing than feels comfortable.",
+    "Subtle grain textures, noise overlays, custom cursors, selection states, and loading animations: separates good from extraordinary."
+  ]
+}
