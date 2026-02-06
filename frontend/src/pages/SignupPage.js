@@ -5,8 +5,9 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { useAuth } from "../context/AuthContext";
+import api from "../lib/api";
 import { toast } from "sonner";
-import { ArrowLeft, Eye, EyeOff, Loader2, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, Loader2, CheckCircle2, Github } from "lucide-react";
 import Logo from "../components/Logo";
 
 export default function SignupPage() {
@@ -15,6 +16,7 @@ export default function SignupPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [githubLoading, setGithubLoading] = useState(false);
   const { signup } = useAuth();
   const navigate = useNavigate();
 
@@ -42,13 +44,24 @@ export default function SignupPage() {
     setLoading(true);
     try {
       await signup(name, email, password);
-      toast.success("Welcome to CursorCode AI!");
+      toast.success("Account created! Please verify your email.");
       navigate("/dashboard");
     } catch (error) {
       const message = error.response?.data?.detail || "Signup failed";
       toast.error(message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGitHubSignup = async () => {
+    setGithubLoading(true);
+    try {
+      const response = await api.get("/auth/github");
+      window.location.href = response.data.url;
+    } catch (error) {
+      toast.error("Failed to connect to GitHub");
+      setGithubLoading(false);
     }
   };
 
@@ -119,6 +132,32 @@ export default function SignupPage() {
           <p className="text-zinc-400 mb-8">
             Start building with 10 free AI credits
           </p>
+
+          {/* GitHub OAuth Button */}
+          <Button
+            type="button"
+            onClick={handleGitHubSignup}
+            disabled={githubLoading}
+            variant="outline"
+            className="w-full h-12 border-white/10 text-white hover:bg-white/5 mb-6"
+            data-testid="github-signup-btn"
+          >
+            {githubLoading ? (
+              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+            ) : (
+              <Github className="w-5 h-5 mr-2" />
+            )}
+            Continue with GitHub
+          </Button>
+
+          <div className="relative mb-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-white/10" />
+            </div>
+            <div className="relative flex justify-center text-xs">
+              <span className="bg-void px-4 text-zinc-500">or continue with email</span>
+            </div>
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
